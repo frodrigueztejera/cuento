@@ -10,7 +10,7 @@
     <!-- Librería PageFlip para el efecto de pasar página -->
     <script src="https://cdn.jsdelivr.net/npm/page-flip/dist/js/page-flip.browser.js"></script>
 </head>
-<body>
+<body class="dark-green-theme">
     <div class="header">
         <h1>Lector de Cuentos</h1>
         <p>Sube tu cuento en formato PDF para visualizarlo como un libro real.</p>
@@ -23,8 +23,20 @@
     </div>
 
     <div class="book-container">
+        <!-- Botón Anterior -->
+        <button id="prev-btn" class="nav-btn prev-btn" aria-label="Página Anterior">
+            <span class="arrow">❮</span>
+            <span class="btn-text">Anterior</span>
+        </button>
+
         <!-- El flipbook se generará aquí -->
         <div id="flip-book" class="flip-book"></div>
+
+        <!-- Botón Siguiente -->
+        <button id="next-btn" class="nav-btn next-btn" aria-label="Página Siguiente">
+            <span class="btn-text">Siguiente</span>
+            <span class="arrow">❯</span>
+        </button>
     </div>
 
     <script src="script.js"></script>
