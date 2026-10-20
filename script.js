@@ -265,3 +265,13 @@ function stopSpeech() {
 function announceToScreenReader(message) {
     if (announcer) announcer.textContent = message;
 }
+
+// --- Declaratoria de IAG y Recursos ---
+const AI_DECLARATION = {
+    aiGenerativeTools: ['Inteligencia Artificial Generativa (IAG) para la creación de imágenes e ilustraciones del libro.'],
+    resourceUrl: window.location.href,
+    repositoryName: 'cuento.pdf',
+    license: 'Recursos educativos digitales adaptados para accesibilidad universal.'
+};
+
+console.log('Información del Recurso y Declaratoria IAG:', AI_DECLARATION);
