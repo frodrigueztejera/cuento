@@ -4,121 +4,19 @@
     padding: 0;
 }
 
+:root {
+    --zoom-factor: 1; /* Variable para controlar la escala/tamaño del texto e interfaz */
+}
+
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #1e392a;
+    background-color: #1e392a; /* Verde oscuro para el fondo general */
     color: #ecf0f1;
     display: flex;
     flex-direction: column;
     align-items: center;
     min-height: 100vh;
-}
-
-.header {
-    text-align: center;
-    padding: 20px;
-    background-color: #004d40;
-    width: 100%;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.2);
-}
-
-.header h1 {
-    margin-bottom: 15px;
-    font-size: 2.2rem;
-}
-
-/* Barra de herramientas accesible */
-.toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: center;
-    gap: 15px;
-    margin-top: 10px;
-}
-
-.nav-controls, .zoom-controls, .audio-controls {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background-color: rgba(0, 0, 0, 0.2);
-    padding: 8px 12px;
-    border-radius: 8px;
-}
-
-/* Estilos de Botones */
-.btn {
-    background-color: #27ae60;
-    color: #ffffff;
-    border: 2px solid transparent;
-    padding: 10px 16px;
-    font-size: 1rem;
-    font-weight: bold;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: background-color 0.2s, transform 0.1s;
-}
-
-.btn:hover {
-    background-color: #219653;
-}
-
-.btn:focus {
-    outline: 3px solid #f1c40f;
-    border-color: #ffffff;
-}
-
-.btn-audio {
-    background-color: #e67e22;
-}
-
-.btn-audio:hover {
-    background-color: #d35400;
-}
-
-#page-num-display {
-    font-weight: bold;
-    font-size: 1.1rem;
-    padding: 0 8px;
-    color: #f1c40f;
-}
-
-#loading {
-    margin-top: 15px;
-    color: #f1c40f;
-    font-weight: bold;
-    font-size: 1.2rem;
-}
-
-/* Contenedor del Libro */
-.book-container {
-    flex: 1;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 20px;
-    width: 100%;
-}
-
-.flip-book {
-    display: none;
-    box-shadow: 0 0 20px rgba(0,0,0,0.8);
-}
-
-.page {
-    background-color: #fff;
-    border: solid 1px #bdc3c7;
-    overflow: hidden;
-}
-
-.page canvas {
-    width: 100%;
-    height: 100%;
-    display: block;
-}
-
-.stf__wrapper {
-    background-color: transparent !important;
+    font-size: calc(16px * var(--zoom-factor)); /* Escala responsiva */
 }
 
 /* Oculto a la vista pero accesible para lectores de pantalla */
@@ -132,4 +30,108 @@ body {
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
     border: 0;
+}
+
+.header {
+    text-align: center;
+    padding: 20px;
+    background-color: #004d40;
+    width: 100%;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.header h1 {
+    font-size: calc(2rem * var(--zoom-factor));
+    margin-bottom: 10px;
+}
+
+.header p {
+    font-size: calc(1rem * var(--zoom-factor));
+}
+
+/* Contenedor de botones accesibles */
+.accessibility-toolbar {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    flex-wrap: wrap;
+    margin-top: 15px;
+}
+
+.access-btn, .nav-btn {
+    background-color: #27ae60;
+    color: white;
+    border: 2px solid #ffffff;
+    padding: 10px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: calc(0.95rem * var(--zoom-factor));
+    font-weight: bold;
+    transition: background-color 0.2s, transform 0.2s;
+}
+
+.access-btn:hover, .nav-btn:hover {
+    background-color: #2196f3;
+}
+
+.access-btn:focus, .nav-btn:focus {
+    outline: 3px solid #f1c40f;
+}
+
+#loading {
+    display: block;
+    margin-top: 15px;
+    color: #f1c40f;
+    font-weight: bold;
+    font-size: calc(1.1rem * var(--zoom-factor));
+}
+
+.book-container {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    width: 100%;
+    gap: 15px;
+}
+
+.flip-book {
+    display: none; /* Oculto hasta que se cargue el PDF */
+    box-shadow: 0 0 20px rgba(0,0,0,0.8);
+    transform: scale(var(--zoom-factor)); /* Zoom al lienzo del libro */
+    transform-origin: center center;
+    transition: transform 0.2s ease;
+}
+
+.page {
+    background-color: #fff;
+    border: solid 1px #bdc3c7;
+    overflow: hidden;
+}
+
+.page canvas {
+    width: 100%;
+    height: 100%;
+}
+
+.stf__wrapper {
+    background-color: transparent !important;
+}
+
+/* Declaratoria al final */
+.footer {
+    width: 100%;
+    padding: 15px 20px;
+    background-color: #00332c;
+    text-align: center;
+    margin-top: auto;
+}
+
+.ai-disclaimer {
+    font-size: calc(0.85rem * var(--zoom-factor));
+    color: #bdc3c7;
+    max-width: 900px;
+    margin: 0 auto;
+    line-height: 1.4;
 }
