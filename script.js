@@ -19,7 +19,7 @@ let pagesText = [];
 let currentScale = 1.5;
 let currentPageIndex = 0;
 let spanishVoice = null;
-let activeRenderTasks = []; // Para cancelar tareas de renderizado en cola al cambiar zoom rápido
+let activeRenderTasks = []; // Para cancelar tareas previas de PDF.js si el usuario cambia zoom rápido
 
 document.addEventListener('DOMContentLoaded', () => {
     initVoices();
@@ -37,7 +37,7 @@ function initVoices() {
     }
 }
 
-// Carga inicial: Extrae texto y crea el DOM base
+// Carga inicial: Extrae el texto e inicia el primer renderizado
 async function loadPDF(pdfUrl) {
     loading.style.display = 'block';
     bookContainer.style.display = 'none';
@@ -47,7 +47,7 @@ async function loadPDF(pdfUrl) {
         currentPdf = await pdfjsLib.getDocument(pdfUrl).promise;
         const totalPages = currentPdf.numPages;
 
-        // Extraer texto en paralelo
+        // Extraer texto en paralelo para mayor rapidez
         const textPromises = [];
         for (let i = 1; i <= totalPages; i++) {
             textPromises.push(
@@ -59,22 +59,19 @@ async function loadPDF(pdfUrl) {
         }
         pagesText = await Promise.all(textPromises);
 
-        // Crear la estructura básica del DOM
-        buildBookDOM(totalPages);
-
-        // Renderizar páginas e inicializar flipbook
+        // Renderizar páginas con el zoom inicial
         await renderAllPagesFast();
         announceToScreenReader('Cuento cargado correctamente.');
 
     } catch (error) {
         console.error('Error al cargar el PDF:', error);
-        loading.innerText = 'Error al cargar el archivo PDF.';
+        loading.innerText = 'Error al cargar el archivo PDF. Asegúrate de que exista en la raíz del proyecto.';
         announceToScreenReader('Error al cargar el libro.');
     }
 }
 
-// Crea los contenedores y canvas vacíos solo una vez
-function buildBookDOM(totalPages) {
+// Recrea los divs y canvas limpios en el DOM para evitar errores tras el destroy() de St.PageFlip
+function rebuildBookDOM(totalPages) {
     bookContainer.innerHTML = '';
     for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
         const pageDiv = document.createElement('div');
@@ -90,27 +87,35 @@ function buildBookDOM(totalPages) {
     }
 }
 
-// Renderizado rápido: Prioriza la página visible y delega el resto
+// Proceso rápido de zoom / renderizado
 async function renderAllPagesFast() {
     if (!currentPdf) return;
 
-    // Cancelar renders previos en progreso
-    activeRenderTasks.forEach(task => task.cancel && task.cancel());
+    loading.style.display = 'block';
+
+    // 1. Cancelar cualquier renderizado de PDF.js previo que siga en curso
+    activeRenderTasks.forEach(task => task && task.cancel && task.cancel());
     activeRenderTasks = [];
 
+    // 2. Destruir la instancia de PageFlip previa si existe
+    if (pageFlip) {
+        pageFlip.destroy();
+        pageFlip = null;
+    }
+
     const totalPages = currentPdf.numPages;
+
+    // 3. Reconstruir los canvas limpios en el DOM (soluciona el bloqueo de carga)
+    rebuildBookDOM(totalPages);
+
     const firstPage = await currentPdf.getPage(1);
     const viewportInfo = firstPage.getViewport({ scale: currentScale });
 
-    // 1. Renderizar Inmediatamente la página donde está el usuario actualmente
+    // 4. Renderizar INMEDIATAMENTE solo la página que el usuario está viendo actualmente
     const priorityPageNum = currentPageIndex + 1;
     await renderSingleCanvas(priorityPageNum);
 
-    // 2. Inicializar o Re-inicializar St.PageFlip
-    if (pageFlip) {
-        pageFlip.destroy();
-    }
-
+    // 5. Inicializar nuevamente St.PageFlip con las nuevas dimensiones de la escala
     bookContainer.style.display = 'block';
 
     pageFlip = new St.PageFlip(bookContainer, {
@@ -128,6 +133,7 @@ async function renderAllPagesFast() {
 
     pageFlip.loadFromHTML(document.querySelectorAll('.page'));
 
+    // Restaurar la página donde estaba el usuario antes del zoom
     if (currentPageIndex > 0 && currentPageIndex < totalPages) {
         pageFlip.turnToPage(currentPageIndex);
     }
@@ -135,38 +141,42 @@ async function renderAllPagesFast() {
     pageFlip.on('flip', (e) => {
         currentPageIndex = e.data;
         updatePageUI();
-        // Renderizar la página recién visible por si aún no se renderizó en segundo plano
+        // Cargar inmediatamente la nueva página si el usuario pasa de hoja
         renderSingleCanvas(currentPageIndex + 1);
     });
 
     loading.style.display = 'none';
     updatePageUI();
 
-    // 3. Renderizar las demás páginas en segundo plano sin bloquear el hilo principal
+    // 6. Renderizar en segundo plano el resto de páginas sin congelar la pantalla
     renderRemainingPagesBackground(priorityPageNum, totalPages);
 }
 
-// Dibuja individualmente sobre un canvas existente
+// Dibuja individualmente sobre el canvas de una página
 async function renderSingleCanvas(pageNum) {
     const canvas = document.getElementById(`pdf-canvas-${pageNum}`);
     if (!canvas) return;
 
-    const page = await currentPdf.getPage(pageNum);
-    const viewport = page.getViewport({ scale: currentScale });
-    const context = canvas.getContext('2d');
+    try {
+        const page = await currentPdf.getPage(pageNum);
+        const viewport = page.getViewport({ scale: currentScale });
+        const context = canvas.getContext('2d');
 
-    // Redimensionar canvas solo si cambió la escala
-    if (canvas.width !== viewport.width || canvas.height !== viewport.height) {
         canvas.width = viewport.width;
         canvas.height = viewport.height;
-    }
 
-    const renderTask = page.render({ canvasContext: context, viewport: viewport });
-    activeRenderTasks.push(renderTask);
-    return renderTask.promise.catch(() => {}); // Ignorar errores de cancelación limpia
+        const renderTask = page.render({ canvasContext: context, viewport: viewport });
+        activeRenderTasks.push(renderTask);
+        await renderTask.promise;
+    } catch (err) {
+        // Ignorar cancelaciones intencionales al cambiar de zoom rápido
+        if (err.name !== 'RenderingCancelledException') {
+            console.error(`Error al renderizar la página ${pageNum}:`, err);
+        }
+    }
 }
 
-// Procesa el resto de las páginas asíncronamente en segundo plano
+// Procesa el resto de páginas asíncronamente
 function renderRemainingPagesBackground(skipPageNum, totalPages) {
     const queue = [];
     for (let i = 1; i <= totalPages; i++) {
@@ -188,7 +198,6 @@ function renderRemainingPagesBackground(skipPageNum, totalPages) {
     processNext();
 }
 
-// Indicador UI
 function updatePageUI() {
     const pageNumber = currentPageIndex + 1;
     const totalPages = pagesText.length;
@@ -196,11 +205,11 @@ function updatePageUI() {
     announceToScreenReader(`Página ${pageNumber} de ${totalPages}`);
 }
 
-// Navegación
+// --- Controles de Navegación ---
 prevBtn.addEventListener('click', () => { if (pageFlip) pageFlip.flipPrev(); });
 nextBtn.addEventListener('click', () => { if (pageFlip) pageFlip.flipNext(); });
 
-// --- Controles de Zoom Instantáneo ---
+// --- Controles de Zoom ---
 zoomInBtn.addEventListener('click', () => {
     currentScale += 0.25;
     applyZoomFast();
@@ -224,7 +233,7 @@ function applyZoomFast() {
     announceToScreenReader(`Zoom ajustado al ${Math.round(currentScale * 100)}%`);
 }
 
-// --- Text-To-Speech ---
+// --- Lectura en Voz Alta ---
 speakBtn.addEventListener('click', () => {
     stopSpeech();
     const textToRead = pagesText[currentPageIndex];
