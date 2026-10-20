@@ -6,7 +6,7 @@
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #1e392a; /* Verde oscuro para el fondo general */
+    background-color: #1e392a;
     color: #ecf0f1;
     display: flex;
     flex-direction: column;
@@ -17,56 +17,91 @@ body {
 .header {
     text-align: center;
     padding: 20px;
-    background-color: #004d40; /* Tono de verde más oscuro para contraste en el header */
+    background-color: #004d40;
     width: 100%;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.2);
 }
 
 .header h1 {
-    margin-bottom: 10px;
+    margin-bottom: 15px;
+    font-size: 2.2rem;
 }
 
-.upload-container {
-    margin-top: 20px;
+/* Barra de herramientas accesible */
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    margin-top: 10px;
 }
 
-input[type="file"] {
-    display: none; /* Ocultamos el input original */
+.nav-controls, .zoom-controls, .audio-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: rgba(0, 0, 0, 0.2);
+    padding: 8px 12px;
+    border-radius: 8px;
 }
 
-.upload-btn {
-    background-color: #e74c3c;
-    color: white;
-    padding: 10px 20px;
-    border-radius: 5px;
-    cursor: pointer;
+/* Estilos de Botones */
+.btn {
+    background-color: #27ae60;
+    color: #ffffff;
+    border: 2px solid transparent;
+    padding: 10px 16px;
+    font-size: 1rem;
     font-weight: bold;
-    transition: background-color 0.3s;
-    display: inline-block;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.1s;
 }
 
-.upload-btn:hover {
-    background-color: #c0392b;
+.btn:hover {
+    background-color: #219653;
+}
+
+.btn:focus {
+    outline: 3px solid #f1c40f;
+    border-color: #ffffff;
+}
+
+.btn-audio {
+    background-color: #e67e22;
+}
+
+.btn-audio:hover {
+    background-color: #d35400;
+}
+
+#page-num-display {
+    font-weight: bold;
+    font-size: 1.1rem;
+    padding: 0 8px;
+    color: #f1c40f;
 }
 
 #loading {
-    display: none;
     margin-top: 15px;
     color: #f1c40f;
     font-weight: bold;
+    font-size: 1.2rem;
 }
 
+/* Contenedor del Libro */
 .book-container {
     flex: 1;
     display: flex;
     justify-content: center;
     align-items: center;
-    padding: 40px;
+    padding: 20px;
     width: 100%;
 }
 
 .flip-book {
-    display: none; /* Oculto hasta que se cargue el PDF */
+    display: none;
     box-shadow: 0 0 20px rgba(0,0,0,0.8);
 }
 
@@ -79,9 +114,22 @@ input[type="file"] {
 .page canvas {
     width: 100%;
     height: 100%;
+    display: block;
 }
 
-/* Para ocultar sombras extrañas de la librería cuando no hay nada */
 .stf__wrapper {
     background-color: transparent !important;
+}
+
+/* Oculto a la vista pero accesible para lectores de pantalla */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
