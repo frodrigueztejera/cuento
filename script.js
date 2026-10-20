@@ -1,277 +1,195 @@
+// Configuramos la ruta del worker de PDF.js
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
-// Elementos DOM
+// Elementos del DOM
 const bookContainer = document.getElementById('flip-book');
 const loading = document.getElementById('loading');
 const prevBtn = document.getElementById('prev-btn');
 const nextBtn = document.getElementById('next-btn');
+const readAloudBtn = document.getElementById('read-aloud-btn');
 const zoomInBtn = document.getElementById('zoom-in-btn');
 const zoomOutBtn = document.getElementById('zoom-out-btn');
-const zoomResetBtn = document.getElementById('zoom-reset-btn');
-const speakBtn = document.getElementById('speak-btn');
-const stopBtn = document.getElementById('stop-btn');
-const pageNumDisplay = document.getElementById('page-num-display');
 const announcer = document.getElementById('screen-reader-announcer');
 
 let pageFlip = null;
-let currentPdf = null;
-let pagesText = [];
-let currentScale = 1.5;
-let currentPageIndex = 0;
-let spanishVoice = null;
-let activeRenderTasks = []; // Para cancelar tareas previas de PDF.js si el usuario cambia zoom rápido
+let currentZoom = 1.0;
+let pdfTextContent = []; // Almacena el texto extraído de las páginas para síntesis de voz
 
+// Nombre del archivo alojado en la raíz del repositorio
+const PDF_URL = './cuento.pdf';
+
+// Función para anunciar mensajes al lector de pantalla
+function announce(message) {
+    if (announcer) {
+        announcer.textContent = message;
+    }
+}
+
+// Cargar automáticamente cuento.pdf al iniciar la página
 document.addEventListener('DOMContentLoaded', () => {
-    initVoices();
-    loadPDF('cuento.pdf');
+    announce("Iniciando carga del cuento...");
+    loadPDF(PDF_URL);
 });
 
-function initVoices() {
-    if ('speechSynthesis' in window) {
-        const updateVoices = () => {
-            const voices = window.speechSynthesis.getVoices();
-            spanishVoice = voices.find(voice => voice.lang.startsWith('es')) || null;
-        };
-        window.speechSynthesis.onvoiceschanged = updateVoices;
-        updateVoices();
-    }
-}
-
-// Carga inicial: Extrae el texto e inicia el primer renderizado
-async function loadPDF(pdfUrl) {
+async function loadPDF(url) {
     loading.style.display = 'block';
     bookContainer.style.display = 'none';
-    pagesText = [];
-
-    try {
-        currentPdf = await pdfjsLib.getDocument(pdfUrl).promise;
-        const totalPages = currentPdf.numPages;
-
-        // Extraer texto en paralelo para mayor rapidez
-        const textPromises = [];
-        for (let i = 1; i <= totalPages; i++) {
-            textPromises.push(
-                currentPdf.getPage(i).then(async (page) => {
-                    const textContent = await page.getTextContent();
-                    return textContent.items.map(item => item.str).join(' ').trim() || `Página ${i} sin texto accesible.`;
-                })
-            );
-        }
-        pagesText = await Promise.all(textPromises);
-
-        // Renderizar páginas con el zoom inicial
-        await renderAllPagesFast();
-        announceToScreenReader('Cuento cargado correctamente.');
-
-    } catch (error) {
-        console.error('Error al cargar el PDF:', error);
-        loading.innerText = 'Error al cargar el archivo PDF. Asegúrate de que exista en la raíz del proyecto.';
-        announceToScreenReader('Error al cargar el libro.');
-    }
-}
-
-// Recrea los divs y canvas limpios en el DOM para evitar errores tras el destroy() de St.PageFlip
-function rebuildBookDOM(totalPages) {
     bookContainer.innerHTML = '';
-    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
-        const pageDiv = document.createElement('div');
-        pageDiv.className = 'page';
-        pageDiv.setAttribute('role', 'region');
-        pageDiv.setAttribute('aria-label', `Página ${pageNum}`);
-        
-        const canvas = document.createElement('canvas');
-        canvas.id = `pdf-canvas-${pageNum}`;
-        pageDiv.appendChild(canvas);
-        
-        bookContainer.appendChild(pageDiv);
-    }
-}
+    pdfTextContent = [];
 
-// Proceso rápido de zoom / renderizado
-async function renderAllPagesFast() {
-    if (!currentPdf) return;
-
-    loading.style.display = 'block';
-
-    // 1. Cancelar cualquier renderizado de PDF.js previo que siga en curso
-    activeRenderTasks.forEach(task => task && task.cancel && task.cancel());
-    activeRenderTasks = [];
-
-    // 2. Destruir la instancia de PageFlip previa si existe
     if (pageFlip) {
         pageFlip.destroy();
         pageFlip = null;
     }
 
-    const totalPages = currentPdf.numPages;
-
-    // 3. Reconstruir los canvas limpios en el DOM (soluciona el bloqueo de carga)
-    rebuildBookDOM(totalPages);
-
-    const firstPage = await currentPdf.getPage(1);
-    const viewportInfo = firstPage.getViewport({ scale: currentScale });
-
-    // 4. Renderizar INMEDIATAMENTE solo la página que el usuario está viendo actualmente
-    const priorityPageNum = currentPageIndex + 1;
-    await renderSingleCanvas(priorityPageNum);
-
-    // 5. Inicializar nuevamente St.PageFlip con las nuevas dimensiones de la escala
-    bookContainer.style.display = 'block';
-
-    pageFlip = new St.PageFlip(bookContainer, {
-        width: viewportInfo.width,
-        height: viewportInfo.height,
-        size: "stretch",
-        minWidth: 300,
-        maxWidth: viewportInfo.width * 1.5,
-        minHeight: 400,
-        maxHeight: viewportInfo.height * 1.5,
-        showCover: true,
-        maxShadowOpacity: 0.5,
-        usePortrait: true
-    });
-
-    pageFlip.loadFromHTML(document.querySelectorAll('.page'));
-
-    // Restaurar la página donde estaba el usuario antes del zoom
-    if (currentPageIndex > 0 && currentPageIndex < totalPages) {
-        pageFlip.turnToPage(currentPageIndex);
-    }
-
-    pageFlip.on('flip', (e) => {
-        currentPageIndex = e.data;
-        updatePageUI();
-        // Cargar inmediatamente la nueva página si el usuario pasa de hoja
-        renderSingleCanvas(currentPageIndex + 1);
-    });
-
-    loading.style.display = 'none';
-    updatePageUI();
-
-    // 6. Renderizar en segundo plano el resto de páginas sin congelar la pantalla
-    renderRemainingPagesBackground(priorityPageNum, totalPages);
-}
-
-// Dibuja individualmente sobre el canvas de una página
-async function renderSingleCanvas(pageNum) {
-    const canvas = document.getElementById(`pdf-canvas-${pageNum}`);
-    if (!canvas) return;
-
     try {
-        const page = await currentPdf.getPage(pageNum);
-        const viewport = page.getViewport({ scale: currentScale });
-        const context = canvas.getContext('2d');
+        // Carga del archivo cuento.pdf desde el repositorio
+        const pdf = await pdfjsLib.getDocument(url).promise;
+        const totalPages = pdf.numPages;
+        
+        const firstPage = await pdf.getPage(1);
+        const viewportInfo = firstPage.getViewport({ scale: 1.5 });
+        const pageWidth = viewportInfo.width;
+        const pageHeight = viewportInfo.height;
 
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
+        for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+            const page = await pdf.getPage(pageNum);
+            
+            // Extraer texto para la voz en alto / accesibilidad
+            const textPageContent = await page.getTextContent();
+            const pageText = textPageContent.items.map(item => item.str).join(' ');
+            pdfTextContent.push(pageText);
 
-        const renderTask = page.render({ canvasContext: context, viewport: viewport });
-        activeRenderTasks.push(renderTask);
-        await renderTask.promise;
-    } catch (err) {
-        // Ignorar cancelaciones intencionales al cambiar de zoom rápido
-        if (err.name !== 'RenderingCancelledException') {
-            console.error(`Error al renderizar la página ${pageNum}:`, err);
+            // Renderizar canvas
+            const viewport = page.getViewport({ scale: 1.5 });
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            
+            const renderContext = {
+                canvasContext: context,
+                viewport: viewport
+            };
+            
+            await page.render(renderContext).promise;
+            
+            const pageDiv = document.createElement('div');
+            pageDiv.className = 'page';
+            pageDiv.appendChild(canvas);
+            
+            bookContainer.appendChild(pageDiv);
         }
-    }
-}
 
-// Procesa el resto de páginas asíncronamente
-function renderRemainingPagesBackground(skipPageNum, totalPages) {
-    const queue = [];
-    for (let i = 1; i <= totalPages; i++) {
-        if (i !== skipPageNum) queue.push(i);
-    }
-
-    function processNext() {
-        if (queue.length === 0) return;
-        const pageNum = queue.shift();
-        renderSingleCanvas(pageNum).then(() => {
-            if ('requestIdleCallback' in window) {
-                requestIdleCallback(processNext);
-            } else {
-                setTimeout(processNext, 10);
-            }
+        bookContainer.style.display = 'block';
+        
+        // Inicializar PageFlip
+        pageFlip = new St.PageFlip(bookContainer, {
+            width: pageWidth,
+            height: pageHeight,
+            size: "stretch",
+            minWidth: 315,
+            maxWidth: pageWidth,
+            minHeight: 420,
+            maxHeight: pageHeight,
+            showCover: true,
+            maxShadowOpacity: 0.5,
+            usePortrait: true
         });
+
+        const pages = document.querySelectorAll('.page');
+        pageFlip.loadFromHTML(pages);
+        
+        // Notificar cambios de página al lector de pantalla
+        pageFlip.on('flip', (e) => {
+            const pageNum = e.data + 1;
+            announce(`Página ${pageNum} de ${totalPages}`);
+        });
+
+        loading.style.display = 'none';
+        announce("El cuento ha finalizado de cargarse con éxito.");
+        
+    } catch (error) {
+        console.error('Error al cargar el PDF:', error);
+        loading.innerText = 'Error al cargar el cuento. Asegúrate de tener el archivo "cuento.pdf" en el repositorio.';
+        announce("Ocurrió un error al cargar el cuento.");
+    }
+}
+
+// -------------------------------------------------------------
+// NAVEGACIÓN (Página anterior / Siguiente)
+// -------------------------------------------------------------
+prevBtn.addEventListener('click', () => {
+    if (pageFlip) {
+        pageFlip.flipPrev();
+    }
+});
+
+nextBtn.addEventListener('click', () => {
+    if (pageFlip) {
+        pageFlip.flipNext();
+    }
+});
+
+// -------------------------------------------------------------
+// LECTURA EN VOZ ALTA (Text-To-Speech en Español)
+// -------------------------------------------------------------
+readAloudBtn.addEventListener('click', () => {
+    if (!('speechSynthesis' in window)) {
+        alert("Tu navegador no soporta la lectura en voz alta.");
+        return;
     }
 
-    processNext();
-}
-
-function updatePageUI() {
-    const pageNumber = currentPageIndex + 1;
-    const totalPages = pagesText.length;
-    pageNumDisplay.innerText = `Página ${pageNumber} de ${totalPages}`;
-    announceToScreenReader(`Página ${pageNumber} de ${totalPages}`);
-}
-
-// --- Controles de Navegación ---
-prevBtn.addEventListener('click', () => { if (pageFlip) pageFlip.flipPrev(); });
-nextBtn.addEventListener('click', () => { if (pageFlip) pageFlip.flipNext(); });
-
-// --- Controles de Zoom ---
-zoomInBtn.addEventListener('click', () => {
-    currentScale += 0.25;
-    applyZoomFast();
-});
-
-zoomOutBtn.addEventListener('click', () => {
-    if (currentScale > 0.75) {
-        currentScale -= 0.25;
-        applyZoomFast();
+    // Cancelar si ya hay una lectura en curso
+    if (window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
+        readAloudBtn.innerText = "🔊 Leer en voz alta";
+        announce("Lectura en voz alta pausada.");
+        return;
     }
-});
 
-zoomResetBtn.addEventListener('click', () => {
-    currentScale = 1.5;
-    applyZoomFast();
-});
+    if (!pageFlip) return;
 
-function applyZoomFast() {
-    stopSpeech();
-    renderAllPagesFast();
-    announceToScreenReader(`Zoom ajustado al ${Math.round(currentScale * 100)}%`);
-}
+    const currentPageIndex = pageFlip.getCurrentPageIndex();
+    const textToRead = pdfTextContent[currentPageIndex];
 
-// --- Lectura en Voz Alta ---
-speakBtn.addEventListener('click', () => {
-    stopSpeech();
-    const textToRead = pagesText[currentPageIndex];
     if (!textToRead || textToRead.trim() === '') {
-        announceToScreenReader('No hay texto legible en esta página.');
+        announce("No hay texto para leer en esta página.");
         return;
     }
 
     const utterance = new SpeechSynthesisUtterance(textToRead);
-    utterance.lang = 'es-ES';
-    utterance.rate = 0.9;
-    if (spanishVoice) utterance.voice = spanishVoice;
+    utterance.lang = 'es-ES'; // Configuración de idioma español
+    utterance.rate = 0.9;      // Velocidad ligeramente moderada para mejor comprensión
+
+    utterance.onstart = () => {
+        readAloudBtn.innerText = "⏹️ Detener Lectura";
+        announce(`Iniciando lectura en voz alta de la página ${currentPageIndex + 1}`);
+    };
+
+    utterance.onend = () => {
+        readAloudBtn.innerText = "🔊 Leer en voz alta";
+        announce("Lectura finalizada.");
+    };
 
     window.speechSynthesis.speak(utterance);
-    announceToScreenReader('Iniciando lectura en voz alta.');
 });
 
-stopBtn.addEventListener('click', () => {
-    stopSpeech();
-    announceToScreenReader('Lectura cancelada.');
-});
-
-function stopSpeech() {
-    if ('speechSynthesis' in window && window.speechSynthesis.speaking) {
-        window.speechSynthesis.cancel();
+// -------------------------------------------------------------
+// AGRANDAR / ACHICAR TEXTO E INTERFAZ
+// -------------------------------------------------------------
+zoomInBtn.addEventListener('click', () => {
+    if (currentZoom < 1.6) {
+        currentZoom += 0.15;
+        document.documentElement.style.setProperty('--zoom-factor', currentZoom);
+        announce("Tamaño de texto e interfaz aumentado.");
     }
-}
+});
 
-function announceToScreenReader(message) {
-    if (announcer) announcer.textContent = message;
-}
-
-// --- Declaratoria de IAG y Recursos ---
-const AI_DECLARATION = {
-    aiGenerativeTools: ['Inteligencia Artificial Generativa (IAG) para la creación de imágenes e ilustraciones del libro.'],
-    resourceUrl: window.location.href,
-    repositoryName: 'cuento.pdf',
-    license: 'Recursos educativos digitales adaptados para accesibilidad universal.'
-};
-
-console.log('Información del Recurso y Declaratoria IAG:', AI_DECLARATION);
+zoomOutBtn.addEventListener('click', () => {
+    if (currentZoom > 0.8) {
+        currentZoom -= 0.15;
+        document.documentElement.style.setProperty('--zoom-factor', currentZoom);
+        announce("Tamaño de texto e interfaz disminuido.");
+    }
+});
